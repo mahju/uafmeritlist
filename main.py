@@ -73,7 +73,7 @@ def search_in_pdf(pdf_url: str, cnic: str):
         
         # Increase to 10 pages and include table search
         with pdfplumber.open(content) as pdf:
-            for page_num, page in enumerate(pdf.pages[:10]):  # FIRST 10 PAGES
+            for page_num, page in enumerate(pdf.pages[:5]):  # FIRST 10 PAGES
                 logger.info(f"Scanning page {page_num + 1}")
                 
                 # 1. SEARCH TABLES FIRST (where CNIC usually is)
@@ -162,5 +162,6 @@ def healthz():
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
     app.run(host="0.0.0.0", port=port)
+
 
 
