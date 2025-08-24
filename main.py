@@ -68,15 +68,22 @@ def home():
 
 
 @app.route("/search", methods=["POST"])
+
+@app.route("/search", methods=["POST"])
 def search_cnic():
     cnic = request.form.get("cnic", "").strip()
     if not cnic:
         return render_template("index.html", error="Please enter CNIC.")
 
     results = []
-    for m in fetch_merit_lists():
-        if m["file"] and search_cnic_in_pdf(m["file"], cnic):
-            results.append({"list": m["title"], "url": m["file"]})
+    merit_lists = fetch_merit_lists()
+    batch_size = 10
+
+    for i in range(0, len(merit_lists), batch_size):
+        batch = merit_lists[i:i+batch_size]
+        for m in batch:
+            if m["file"] and search_cnic_in_pdf(m["file"], cnic):
+                results.append({"list": m["title"], "url": m["file"]})
 
     return render_template("results.html", results=results, cnic=cnic)
 
@@ -91,6 +98,8 @@ def all_links():
     return jsonify(data)
 
 @app.route("/view_links")
+
+
 def view_links():
     data = fetch_merit_lists()
     html_content = """
@@ -130,6 +139,7 @@ if __name__ == "__main__":
     import os
     port = int(os.environ.get("PORT", 5000))
     app.run(host="0.0.0.0", port=port)
+
 
 
 
