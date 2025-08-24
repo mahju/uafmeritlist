@@ -1,5 +1,4 @@
-
-from flask import Flask, jsonify, request, render_template, render_template_string, Response
+from flask import Flask, jsonify, request, render_template, render_template_string
 import requests
 from bs4 import BeautifulSoup
 from io import BytesIO
@@ -44,7 +43,27 @@ def fetch_merit_lists():
 
 
 def search_in_pdf(pdf_url, cnic):
-    ...
+    """Search CNIC in given PDF and return row details if found."""
+    try:
+        response = requests.get(pdf_url, headers=HEADERS, timeout=20)
+        response.raise_for_status()
+
+        with pdfplumber.open(BytesIO(response.content)) as pdf:
+            for page in pdf.pages:
+                text = page.extract_text()
+                if not text:
+                    continue
+                lines = text.split("\n")
+                for line in lines:
+                    if cnic in line:
+                        return {
+                            "row": line,
+                            "columns": line.split()
+                        }
+        return None
+    except Exception as e:
+        print(f"[Error] Searching in PDF failed ({pdf_url}): {e}")
+        return None
 
 
 @app.route("/", methods=["GET"])
@@ -63,7 +82,7 @@ def search_cnic():
 
     for m in merit_lists:
         if m["file"]:
-            match = search_in_pdf(m["file"], cnic)  # your function should return details if found
+            match = search_in_pdf(m["file"], cnic)
             if match:
                 results.append({
                     "list": m["title"],
@@ -112,31 +131,7 @@ def view_links():
         </table>
     </body>
     </html>
-    
-    def search_in_pdf(pdf_url, cnic):
-    """Search CNIC in given PDF and return row details if found."""
-    try:
-        response = requests.get(pdf_url, headers=HEADERS, timeout=20)
-        response.raise_for_status()
-
-        with pdfplumber.open(BytesIO(response.content)) as pdf:
-            for page in pdf.pages:
-                text = page.extract_text()
-                if not text:
-                    continue
-                lines = text.split("\n")
-                for line in lines:
-                    if cnic in line:
-                        # CNIC مل گیا
-                        return {
-                            "row": line,
-                            "columns": line.split()  # ہر لفظ الگ کر کے دے رہا ہے
-                        }
-        return None
-    except Exception as e:
-        print(f"[Error] Searching in PDF failed ({pdf_url}): {e}")
-        return None
-
+    """
     return render_template_string(html_content, data=data)
 
 
@@ -144,8 +139,3 @@ if __name__ == "__main__":
     import os
     port = int(os.environ.get("PORT", 5000))
     app.run(host="0.0.0.0", port=port)
-
-
-
-
-
