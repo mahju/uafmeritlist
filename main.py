@@ -1,17 +1,16 @@
-from flask import Flask, request, render_template_string
+from flask import Flask, render_template, request
 import requests
 from bs4 import BeautifulSoup
-from io import BytesIO
 import PyPDF2
+from io import BytesIO
 
 app = Flask(__name__)
 
-BASE_URL = "https://uaf.edu.pk/pages/meritlists.html"
 HEADERS = {"User-Agent": "Mozilla/5.0"}
 
-# ------------------ FUNCTIONS ------------------ #
+# --- Step 1: Fetch Merit List PDF Links with Context ---
 def fetch_merit_pdfs():
-    """Fetch all merit list PDF links from the official UAF Downloads page."""
+    """Fetch all merit list PDF links with names from UAF page."""
     url = "https://web.uaf.edu.pk/Downloads/MeritListsView"
     try:
         r = requests.get(url, headers=HEADERS)
@@ -24,12 +23,15 @@ def fetch_merit_pdfs():
             print("Merit list table not found on the page.")
             return pdf_links
 
-        for row in table.find_all("tr")[1:]:  # skip header row
+        for row in table.find_all("tr")[1:]:  # skip header
+            cols = row.find_all("td")
             link_tag = row.find("a", href=True)
             if link_tag:
                 href = link_tag["href"]
                 full_url = href if href.startswith("http") else "https://web.uaf.edu.pk" + href
-                pdf_links.append(full_url)
+                # Combine all columns' text as the list name/department
+                name = " ".join(col.get_text(strip=True) for col in cols)
+                pdf_links.append({"url": full_url, "name": name})
 
         return pdf_links
     except Exception as e:
@@ -37,73 +39,50 @@ def fetch_merit_pdfs():
         return []
 
 
-
-
-def search_cnic_in_pdf(pdf_url, cnic):
-    """Download PDF and search for CNIC as plain number."""
+# --- Step 2: Search CNIC in each PDF ---
+def search_cnic_in_pdf(pdf_info, cnic):
+    """Download PDF and search for CNIC. Return merit list name if found."""
     try:
-        r = requests.get(pdf_url, headers=HEADERS)
+        r = requests.get(pdf_info["url"], headers=HEADERS, timeout=30)
         r.raise_for_status()
         reader = PyPDF2.PdfReader(BytesIO(r.content))
+
         for page in reader.pages:
             text = page.extract_text() or ""
-            if cnic in text.replace(" ", ""):
-                return True
+            # Normalize spacing for easier matching
+            text = text.replace(" ", "").replace("\n", "")
+            if cnic in text:
+                return pdf_info["name"]
     except Exception as e:
-        print(f"Error reading PDF {pdf_url}: {e}")
-    return False
+        print(f"Error reading PDF {pdf_info['url']}: {e}")
+    return None
 
-# ------------------ ROUTES ------------------ #
-@app.route("/")
+
+# --- Flask Routes ---
+@app.route("/", methods=["GET"])
 def home():
-    return render_template_string("""
-        <h2>UAF Merit List CNIC Search</h2>
-        <form action="/search" method="post">
-            Enter CNIC (without dashes): <input type="text" name="cnic" required>
-            <input type="submit" value="Search">
-        </form>
-    """)
+    return render_template("index.html")
+
 
 @app.route("/search", methods=["POST"])
 def search():
     cnic = request.form.get("cnic", "").strip()
-    if not cnic.isdigit():
-        return "<h3>Invalid CNIC! Please enter numbers only.</h3><a href='/'>Back</a>"
+    if not cnic:
+        return render_template("index.html", error="Please enter CNIC.")
 
-    pdf_links = fetch_merit_pdfs()
-    if not pdf_links:
-        return "<h3>No merit list PDFs found!</h3>"
-
+    pdfs = fetch_merit_pdfs()
     results = []
-    for pdf_url in pdf_links:
-        if search_cnic_in_pdf(pdf_url, cnic):
-            results.append(pdf_url)
 
-    if results:
-        result_html = "<h3>CNIC Found in the following lists:</h3><ul>"
-        for url in results:
-            result_html += f'<li><a href="{url}" target="_blank">{url}</a></li>'
-        result_html += "</ul>"
-        return result_html
-    else:
-        return "<h3>No matches found.</h3><a href='/'>Back</a>"
+    for pdf_info in pdfs:
+        found_in = search_cnic_in_pdf(pdf_info, cnic)
+        if found_in:
+            results.append({"list": found_in, "url": pdf_info["url"]})
 
-@app.route("/links")
-def show_links():
-    """Show all fetched merit list PDF links."""
-    try:
-        pdf_links = fetch_merit_pdfs()
-        if not pdf_links:
-            return "<h3>No merit list links found!</h3>"
-        links_html = "<h2>Fetched Merit List Links:</h2><ul>"
-        for url in pdf_links:
-            links_html += f'<li><a href="{url}" target="_blank">{url}</a></li>'
-        links_html += "</ul>"
-        return links_html
-    except Exception as e:
-        return f"<h3>Error fetching links: {e}</h3>"
+    if not results:
+        return render_template("index.html", error="No matches found for this CNIC.")
 
-# ------------------ MAIN ------------------ #
+    return render_template("results.html", results=results, cnic=cnic)
+
+
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=8080)
-
+    app.run(debug=True)
