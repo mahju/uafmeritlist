@@ -60,7 +60,7 @@ def fetch_merit_lists():
         return []
 
 def search_in_pdf(pdf_url: str, cnic: str):
-    """Search for CNIC in PDF - MEMORY EFFICIENT VERSION"""
+    """Search for CNIC in PDF - WITH TABLES & MORE PAGES"""
     try:
         # Stream the PDF instead of loading it all into memory
         logger.info(f"Streaming PDF: {pdf_url}")
@@ -71,12 +71,35 @@ def search_in_pdf(pdf_url: str, cnic: str):
                 if chunk:
                     content.write(chunk)
         
-        # Only check first 3 pages to save memory
+        # Increase to 10 pages and include table search
         with pdfplumber.open(content) as pdf:
-            for page_num, page in enumerate(pdf.pages[:3]):  # ONLY FIRST 3 PAGES
+            for page_num, page in enumerate(pdf.pages[:10]):  # FIRST 10 PAGES
                 logger.info(f"Scanning page {page_num + 1}")
                 
-                # Search text only (skip tables to save memory)
+                # 1. SEARCH TABLES FIRST (where CNIC usually is)
+                try:
+                    tables = page.extract_tables() or []
+                    for table_num, table in enumerate(tables):
+                        for row_num, row in enumerate(table):
+                            if not row:
+                                continue
+                            # Check every cell for CNIC
+                            for cell in row:
+                                cell_text = (cell or "").strip()
+                                if not cell_text:
+                                    continue
+                                # Remove non-digits and search
+                                cell_digits = "".join(ch for ch in cell_text if ch.isdigit())
+                                if cnic in cell_digits:
+                                    logger.info(f"CNIC found in table {table_num}, row {row_num}")
+                                    return {
+                                        "row": " | ".join((c or "").strip() for c in row),
+                                        "columns": [(c or "").strip() for c in row],
+                                    }
+                except Exception as e:
+                    logger.warning(f"Error extracting tables from page {page_num + 1}: {e}")
+                
+                # 2. SEARCH TEXT (fallback)
                 text = page.extract_text() or ""
                 clean_text = "".join(ch for ch in text if ch.isdigit())
                 if cnic in clean_text:
@@ -84,6 +107,7 @@ def search_in_pdf(pdf_url: str, cnic: str):
                     for line in text.split("\n"):
                         line_clean = "".join(ch for ch in line if ch.isdigit())
                         if cnic in line_clean:
+                            logger.info(f"CNIC found in text on page {page_num + 1}")
                             return {
                                 "row": line.strip(),
                                 "columns": line.split(),
@@ -92,9 +116,6 @@ def search_in_pdf(pdf_url: str, cnic: str):
     except Exception as e:
         logger.error(f"search_in_pdf failed for {pdf_url}: {e}")
         return None
-@app.route("/")
-def home():
-    return render_template("index.html")
 
 @app.route("/search", methods=["POST"])
 def search_cnic():
@@ -141,4 +162,5 @@ def healthz():
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
     app.run(host="0.0.0.0", port=port)
+
 
