@@ -1,0 +1,20 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Merit List Search</title>
+</head>
+<body>
+    <h1>🔎 Search CNIC in Merit Lists</h1>
+
+    <form method="POST" action="/search">
+        <label for="cnic">Enter CNIC (without dashes):</label><br>
+        <input type="text" id="cnic" name="cnic" placeholder="e.g. 1234512345671" required>
+        <button type="submit">Search</button>
+    </form>
+
+    {% if error %}
+        <p style="color:red;">{{ error }}</p>
+    {% endif %}
+</body>
+</html>
