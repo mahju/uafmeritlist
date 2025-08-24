@@ -1,4 +1,4 @@
-from flask import Flask, jsonify, request, render_template_string
+from flask import Flask, jsonify, request, render_template
 import requests
 from bs4 import BeautifulSoup
 from io import BytesIO
@@ -49,7 +49,6 @@ def search_cnic_in_pdf(pdf_url, cnic):
         reader = PyPDF2.PdfReader(BytesIO(r.content))
         for page in reader.pages:
             text = page.extract_text() or ""
-            # Only keep digits for comparison
             text_digits = "".join(filter(str.isdigit, text))
             if cnic in text_digits:
                 return True
@@ -58,64 +57,23 @@ def search_cnic_in_pdf(pdf_url, cnic):
     return False
 
 
-@app.route("/")
+@app.route("/", methods=["GET"])
 def home():
-    html_content = """
-    <!DOCTYPE html>
-    <html>
-    <head>
-        <title>UAF Merit List CNIC Search</title>
-        <style>
-            body { font-family: Arial; margin: 30px; }
-            input[type=text] { width: 300px; padding: 5px; }
-            input[type=submit] { padding: 5px 10px; }
-            .result { margin-top: 20px; }
-        </style>
-    </head>
-    <body>
-        <h1>UAF Merit List CNIC Search</h1>
-        <form action="/search" method="get">
-            Enter CNIC (without dashes): <input type="text" name="cnic" required>
-            <input type="submit" value="Search">
-        </form>
-        <div class="result">
-            {% if results is defined %}
-                {% if results %}
-                    <h2>Matches for CNIC {{ cnic }}:</h2>
-                    <ul>
-                        {% for r in results %}
-                            <li>
-                                List No: {{ r.listno }}, Title: {{ r.title }}, Campus: {{ r.campus }},
-                                Degree: {{ r.degree }},
-                                <a href="{{ r.file }}" target="_blank">PDF</a>
-                            </li>
-                        {% endfor %}
-                    </ul>
-                {% else %}
-                    <p>No matches found for CNIC {{ cnic }}.</p>
-                {% endif %}
-            {% endif %}
-        </div>
-    </body>
-    </html>
-    """
-    return render_template_string(html_content)
+    return render_template("index.html")
 
 
-@app.route("/search")
+@app.route("/search", methods=["POST"])
 def search_cnic():
-    cnic = request.args.get("cnic", "").strip()
+    cnic = request.form.get("cnic", "").strip()
     if not cnic:
-        return "Please provide a CNIC using ?cnic=XXXXXXXXXXX", 400
+        return render_template("index.html", error="Please enter CNIC.")
 
     results = []
     for m in fetch_merit_lists():
         if m["file"] and search_cnic_in_pdf(m["file"], cnic):
-            results.append(m)
+            results.append({"list": m["title"], "url": m["file"]})
 
-    # Render same HTML with results
-    html_content = home().data.decode("utf-8")
-    return render_template_string(html_content, results=results, cnic=cnic)
+    return render_template("results.html", results=results, cnic=cnic)
 
 
 @app.route("/all_links")
