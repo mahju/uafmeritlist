@@ -113,6 +113,30 @@ def view_links():
     </body>
     </html>
     """
+    def search_in_pdf(pdf_url, cnic):
+    """Search CNIC in given PDF and return row details if found."""
+    try:
+        response = requests.get(pdf_url, headers=HEADERS, timeout=20)
+        response.raise_for_status()
+
+        with pdfplumber.open(BytesIO(response.content)) as pdf:
+            for page in pdf.pages:
+                text = page.extract_text()
+                if not text:
+                    continue
+                lines = text.split("\n")
+                for line in lines:
+                    if cnic in line:
+                        # CNIC مل گیا
+                        return {
+                            "row": line,
+                            "columns": line.split()  # ہر لفظ الگ کر کے دے رہا ہے
+                        }
+        return None
+    except Exception as e:
+        print(f"[Error] Searching in PDF failed ({pdf_url}): {e}")
+        return None
+
     return render_template_string(html_content, data=data)
 
 
@@ -120,6 +144,7 @@ if __name__ == "__main__":
     import os
     port = int(os.environ.get("PORT", 5000))
     app.run(host="0.0.0.0", port=port)
+
 
 
 
