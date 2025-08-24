@@ -26,10 +26,8 @@ def fetch_merit_lists():
                 cols = row.find_all("td")
                 if len(cols) >= 5:
                     file_link = cols[4].find("a")["href"] if cols[4].find("a") else ""
-                    if file_link:
-                        if not file_link.startswith("http"):
-                            # Ensure proper link without double dots
-                            file_link = BASE_URL.rstrip("/") + "/" + file_link.lstrip("/")
+                    if file_link and not file_link.startswith("http"):
+                        file_link = BASE_URL.rstrip("/") + "/" + file_link.lstrip("/")
 
                     data.append({
                         "listno": cols[0].get_text(strip=True),
@@ -44,26 +42,23 @@ def fetch_merit_lists():
         return []
 
 
-@app.route("/search", methods=["POST"])
-def search_cnic():
-    cnic = request.form.get("cnic", "").strip()
-    if not cnic:
-        return render_template("index.html", error="Please enter CNIC.")
-
-    results = []
-    merit_lists = fetch_merit_lists()
-    batch_size = 3  # smaller batch to avoid timeouts
-
-    for i in range(0, len(merit_lists), batch_size):
-        batch = merit_lists[i:i + batch_size]
-        for m in batch:
-            try:
-                if m["file"] and search_cnic_in_pdf(m["file"], cnic):
-                    results.append({"list": m["title"], "url": m["file"]})
-            except Exception as e:
-                print(f"[Error] Failed processing {m['file']}: {e}")
-
-    return render_template("results.html", results=results, cnic=cnic)
+def search_cnic_in_pdf(pdf_url, cnic):
+    """Search CNIC in column 3 of PDF tables using pdfplumber."""
+    try:
+        r = requests.get(pdf_url, headers=HEADERS, timeout=15)
+        r.raise_for_status()
+        with pdfplumber.open(BytesIO(r.content)) as pdf:
+            for page in pdf.pages:
+                tables = page.extract_tables()
+                for table in tables:
+                    for row in table:
+                        if len(row) >= 3:
+                            col3 = "".join(filter(str.isdigit, row[2] or ""))
+                            if cnic in col3:
+                                return True
+    except Exception as e:
+        print(f"[Warning] Skipping PDF {pdf_url} due to error: {e}")
+    return False
 
 
 @app.route("/", methods=["GET"])
@@ -79,20 +74,22 @@ def search_cnic():
 
     results = []
     merit_lists = fetch_merit_lists()
-    batch_size = 5  # reduce batch size to avoid overload
+    batch_size = 3  # reduce batch size to avoid timeouts
 
     for i in range(0, len(merit_lists), batch_size):
         batch = merit_lists[i:i + batch_size]
         for m in batch:
-            if m["file"] and search_cnic_in_pdf(m["file"], cnic):
-                results.append({"list": m["title"], "url": m["file"]})
+            try:
+                if m["file"] and search_cnic_in_pdf(m["file"], cnic):
+                    results.append({"list": m["title"], "url": m["file"]})
+            except Exception as e:
+                print(f"[Error] Failed processing {m['file']}: {e}")
 
     return render_template("results.html", results=results, cnic=cnic)
 
 
 @app.route("/all_links")
 def all_links():
-    """Return all merit list data as JSON."""
     data = fetch_merit_lists()
     if not data:
         return jsonify({"error": "No merit lists found."})
@@ -101,7 +98,6 @@ def all_links():
 
 @app.route("/view_links")
 def view_links():
-    """Render all merit list links in a table for verification."""
     data = fetch_merit_lists()
     html_content = """
     <!DOCTYPE html>
@@ -145,4 +141,3 @@ if __name__ == "__main__":
     import os
     port = int(os.environ.get("PORT", 5000))
     app.run(host="0.0.0.0", port=port)
-
