@@ -43,30 +43,8 @@ def fetch_merit_lists():
         return []
 
 
-def search_cnic_in_pdf(pdf_url, cnic):
-    """Search CNIC in PDF tables AND full text using pdfplumber."""
-    try:
-        r = requests.get(pdf_url, headers=HEADERS, timeout=15)
-        r.raise_for_status()
-        with pdfplumber.open(BytesIO(r.content)) as pdf:
-            for page in pdf.pages:
-                # 1️⃣ Search in tables
-                tables = page.extract_tables()
-                for table in tables:
-                    for row in table:
-                        if row:
-                            for cell in row:
-                                digits = "".join(filter(str.isdigit, cell or ""))
-                                if cnic in digits:
-                                    return True
-                # 2️⃣ Search in full text
-                text = page.extract_text() or ""
-                digits_text = "".join(filter(str.isdigit, text))
-                if cnic in digits_text:
-                    return True
-    except Exception as e:
-        print(f"[Warning] Skipping PDF {pdf_url} due to error: {e}")
-    return False
+def search_in_pdf(pdf_url, cnic):
+    ...
 
 
 @app.route("/", methods=["GET"])
@@ -142,4 +120,5 @@ if __name__ == "__main__":
     import os
     port = int(os.environ.get("PORT", 5000))
     app.run(host="0.0.0.0", port=port)
+
 
