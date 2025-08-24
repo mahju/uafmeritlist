@@ -47,16 +47,21 @@ def fetch_merit_lists():
 
 
 def search_cnic_in_pdf(pdf_url, cnic):
-    """Download PDF and search for CNIC as plain number."""
+    """Search CNIC in column 3 of tables inside PDF."""
     try:
         r = requests.get(pdf_url, headers=HEADERS, timeout=30)
         r.raise_for_status()
         reader = PyPDF2.PdfReader(BytesIO(r.content))
+
         for page in reader.pages:
             text = page.extract_text() or ""
-            text_digits = "".join(filter(str.isdigit, text))
-            if cnic in text_digits:
-                return True
+            # Split lines and columns
+            for line in text.split("\n"):
+                cols = line.split()  # crude split by whitespace
+                if len(cols) >= 3:
+                    column3 = "".join(filter(str.isdigit, cols[2]))
+                    if cnic in column3:
+                        return True
     except Exception as e:
         print(f"[Warning] Skipping PDF {pdf_url} due to error: {e}")
     return False
@@ -139,6 +144,7 @@ if __name__ == "__main__":
     import os
     port = int(os.environ.get("PORT", 5000))
     app.run(host="0.0.0.0", port=port)
+
 
 
 
