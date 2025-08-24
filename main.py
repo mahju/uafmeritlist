@@ -1,4 +1,5 @@
-from flask import Flask, jsonify, request, render_template
+from flask import Flask, jsonify, request, render_template, render_template_string
+
 import requests
 from bs4 import BeautifulSoup
 from io import BytesIO
@@ -125,5 +126,6 @@ if __name__ == "__main__":
     import os
     port = int(os.environ.get("PORT", 5000))
     app.run(host="0.0.0.0", port=port)
+
 
 
