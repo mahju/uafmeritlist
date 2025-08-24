@@ -1,4 +1,4 @@
-from flask import Flask, jsonify
+from flask import Flask, jsonify, request
 import requests
 from bs4 import BeautifulSoup
 
@@ -11,7 +11,8 @@ def home():
 @app.route('/meritlists')
 def meritlists():
     url = "https://web.uaf.edu.pk/Downloads/MeritListsView"
-    response = requests.get(url)
+    headers = {"User-Agent": "Mozilla/5.0"}  # avoids simple blocks
+    response = requests.get(url, headers=headers)
     soup = BeautifulSoup(response.text, "html.parser")
 
     data = []
@@ -32,4 +33,6 @@ def meritlists():
     return jsonify(data)
 
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=5000)
+    import os
+    port = int(os.environ.get("PORT", 5000))
+    app.run(host="0.0.0.0", port=port)
