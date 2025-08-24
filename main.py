@@ -70,19 +70,24 @@ def search():
     if not cnic:
         return render_template("index.html", error="Please enter CNIC.")
 
-    pdfs = fetch_merit_pdfs()
-    results = []
+    try:
+        pdfs = fetch_merit_pdfs()
+        results = []
 
-    for pdf_info in pdfs:
-        found_in = search_cnic_in_pdf(pdf_info, cnic)
-        if found_in:
-            results.append({"list": found_in, "url": pdf_info["url"]})
+        for pdf_info in pdfs:
+            found_in = search_cnic_in_pdf(pdf_info, cnic)
+            if found_in:
+                results.append({"list": found_in, "url": pdf_info["url"]})
 
-    if not results:
-        return render_template("index.html", error="No matches found for this CNIC.")
+        if not results:
+            return render_template("index.html", error="No matches found for this CNIC.")
 
-    return render_template("results.html", results=results, cnic=cnic)
+        return render_template("results.html", results=results, cnic=cnic)
+
+    except Exception as e:
+        import traceback
+        print("ERROR:", e)
+        traceback.print_exc()
+        return f"<h2>Internal Error:</h2><pre>{e}</pre>", 500
 
 
-if __name__ == "__main__":
-    app.run(debug=True)
