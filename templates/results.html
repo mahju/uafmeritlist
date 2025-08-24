@@ -1,25 +1,20 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <title>Search Results</title>
-</head>
-<body>
-    <h1>Results for CNIC: {{ cnic }}</h1>
+<h2>Search Results</h2>
+<ul>
+{% for r in results %}
+    <li style="margin-bottom:15px;">
+        ✅ Found in: <b>{{ r.list }}</b>  
+        [ <a href="{{ r.url }}" target="_blank">Open PDF</a> ]<br><br>
+        
+        📌 <b>Full Row:</b> {{ r.row }} <br>
 
-    {% if results %}
-        <ul>
-            {% for r in results %}
-                <li>
-                    ✅ Found in: <b>{{ r.list }}</b>  
-                    [ <a href="{{ r.url }}" target="_blank">Open PDF</a> ]
-                </li>
+        {% if r.columns %}
+            <b>Columns:</b>
+            <ul>
+            {% for col in r.columns %}
+                <li>{{ col }}</li>
             {% endfor %}
-        </ul>
-    {% else %}
-        <p style="color:red;">No matches found in any merit list.</p>
-    {% endif %}
-
-    <a href="/">🔙 Back to Search</a>
-</body>
-</html>
+            </ul>
+        {% endif %}
+    </li>
+{% endfor %}
+</ul>
