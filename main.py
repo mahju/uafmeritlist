@@ -11,22 +11,33 @@ HEADERS = {"User-Agent": "Mozilla/5.0"}
 
 # ------------------ FUNCTIONS ------------------ #
 def fetch_merit_pdfs():
-    """Fetch all merit list PDF links from UAF site."""
+    """Fetch all merit list PDF links from the official UAF Downloads page."""
+    url = "https://web.uaf.edu.pk/Downloads/MeritListsView"
     try:
-        r = requests.get(BASE_URL, headers=HEADERS)
+        r = requests.get(url, headers=HEADERS)
         r.raise_for_status()
         soup = BeautifulSoup(r.text, "html.parser")
         pdf_links = []
-        for link in soup.find_all("a", href=True):
-            href = link["href"]
-            if href.lower().endswith(".pdf"):
-                if not href.startswith("http"):
-                    href = "https://uaf.edu.pk/" + href.lstrip("/")
-                pdf_links.append(href)
+
+        table = soup.find("table")
+        if not table:
+            print("Merit list table not found on the page.")
+            return pdf_links
+
+        for row in table.find_all("tr")[1:]:  # skip header row
+            link_tag = row.find("a", href=True)
+            if link_tag:
+                href = link_tag["href"]
+                full_url = href if href.startswith("http") else "https://web.uaf.edu.pk" + href
+                pdf_links.append(full_url)
+
         return pdf_links
     except Exception as e:
         print("Error fetching merit list PDFs:", e)
         return []
+
+
+
 
 def search_cnic_in_pdf(pdf_url, cnic):
     """Download PDF and search for CNIC as plain number."""
@@ -95,3 +106,4 @@ def show_links():
 # ------------------ MAIN ------------------ #
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=8080)
+
