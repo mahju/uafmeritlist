@@ -1,0 +1,25 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Search Results</title>
+</head>
+<body>
+    <h1>Results for CNIC: {{ cnic }}</h1>
+
+    {% if results %}
+        <ul>
+            {% for r in results %}
+                <li>
+                    ✅ Found in: <b>{{ r.list }}</b>  
+                    [ <a href="{{ r.url }}" target="_blank">Open PDF</a> ]
+                </li>
+            {% endfor %}
+        </ul>
+    {% else %}
+        <p style="color:red;">No matches found in any merit list.</p>
+    {% endif %}
+
+    <a href="/">🔙 Back to Search</a>
+</body>
+</html>
