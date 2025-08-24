@@ -10,9 +10,47 @@ BASE_URL = "https://web.uaf.edu.pk"
 MERIT_LIST_PAGE = "https://web.uaf.edu.pk/Downloads/MeritListsView"
 HEADERS = {"User-Agent": "Mozilla/5.0"}
 
+HTML_TEMPLATE = """
+<!DOCTYPE html>
+<html>
+<head>
+    <title>UAF Merit List CNIC Search</title>
+    <style>
+        body { font-family: Arial; margin: 30px; }
+        input[type=text] { width: 300px; padding: 5px; }
+        input[type=submit] { padding: 5px 10px; }
+        .result { margin-top: 20px; }
+    </style>
+</head>
+<body>
+    <h1>UAF Merit List CNIC Search</h1>
+    <form action="/search" method="get">
+        Enter CNIC (without dashes): <input type="text" name="cnic" required>
+        <input type="submit" value="Search">
+    </form>
+    <div class="result">
+        {% if results is defined %}
+            {% if results %}
+                <h2>Matches for CNIC {{ cnic }}:</h2>
+                <ul>
+                    {% for r in results %}
+                        <li>
+                            List No: {{ r.listno }}, Title: {{ r.title }}, Campus: {{ r.campus }},
+                            Degree: {{ r.degree }},
+                            <a href="{{ r.file }}" target="_blank">PDF</a>
+                        </li>
+                    {% endfor %}
+                </ul>
+            {% else %}
+                <p>No matches found for CNIC {{ cnic }}.</p>
+            {% endif %}
+        {% endif %}
+    </div>
+</body>
+</html>
+"""
 
 def fetch_merit_lists():
-    """Fetch all merit list entries from the UAF merit list page."""
     response = requests.get(MERIT_LIST_PAGE, headers=HEADERS)
     response.raise_for_status()
     soup = BeautifulSoup(response.text, "html.parser")
@@ -36,9 +74,7 @@ def fetch_merit_lists():
                 })
     return data
 
-
 def search_cnic_in_pdf(pdf_url, cnic):
-    """Download PDF and search for CNIC as plain number safely."""
     try:
         r = requests.get(pdf_url, headers=HEADERS, timeout=30)
         r.raise_for_status()
@@ -53,51 +89,9 @@ def search_cnic_in_pdf(pdf_url, cnic):
         print(f"[Warning] Skipping PDF {pdf_url} due to error: {e}")
     return False
 
-
-
 @app.route("/")
 def home():
-    html_content = """
-    <!DOCTYPE html>
-    <html>
-    <head>
-        <title>UAF Merit List CNIC Search</title>
-        <style>
-            body { font-family: Arial; margin: 30px; }
-            input[type=text] { width: 300px; padding: 5px; }
-            input[type=submit] { padding: 5px 10px; }
-            .result { margin-top: 20px; }
-        </style>
-    </head>
-    <body>
-        <h1>UAF Merit List CNIC Search</h1>
-        <form action="/search" method="get">
-            Enter CNIC (without dashes): <input type="text" name="cnic" required>
-            <input type="submit" value="Search">
-        </form>
-        <div class="result">
-            {% if results is defined %}
-                {% if results %}
-                    <h2>Matches for CNIC {{ cnic }}:</h2>
-                    <ul>
-                        {% for r in results %}
-                            <li>
-                                List No: {{ r.listno }}, Title: {{ r.title }}, Campus: {{ r.campus }},
-                                Degree: {{ r.degree }},
-                                <a href="{{ r.file }}" target="_blank">PDF</a>
-                            </li>
-                        {% endfor %}
-                    </ul>
-                {% else %}
-                    <p>No matches found for CNIC {{ cnic }}.</p>
-                {% endif %}
-            {% endif %}
-        </div>
-    </body>
-    </html>
-    """
-    return render_template_string(html_content)
-
+    return render_template_string(HTML_TEMPLATE)
 
 @app.route("/search")
 def search_cnic():
@@ -106,17 +100,14 @@ def search_cnic():
         return "Please provide a CNIC using ?cnic=XXXXXXXXXXX", 400
 
     results = []
-    for m in fetch_merit_lists():
+    merit_lists = fetch_merit_lists()
+    for m in merit_lists:
         if m["file"] and search_cnic_in_pdf(m["file"], cnic):
             results.append(m)
 
-    # Render same HTML with results
-    html_content = home().data.decode("utf-8")
-    return render_template_string(html_content, results=results, cnic=cnic)
-
+    return render_template_string(HTML_TEMPLATE, results=results, cnic=cnic)
 
 if __name__ == "__main__":
     import os
     port = int(os.environ.get("PORT", 5000))
     app.run(host="0.0.0.0", port=port)
-
