@@ -120,6 +120,23 @@ def search_in_pdf(pdf_url: str, cnic: str):
     except Exception as e:
         logger.error(f"search_in_pdf failed for {pdf_url}: {e}")
         return None
+
+# ADDED MISSING ROUTES
+@app.route("/")
+def home():
+    """Homepage route - THIS WAS MISSING!"""
+    return render_template("index.html")
+
+@app.route("/test")
+def test():
+    """Test if templates and basic functionality work"""
+    try:
+        # Check if templates exist
+        templates_exist = os.path.exists("templates") and os.path.exists("templates/index.html")
+        return f"App is running! Templates found: {templates_exist}"
+    except Exception as e:
+        return f"Error: {str(e)}"
+
 @app.route("/search", methods=["POST"])
 def search_cnic():
     try:
@@ -164,8 +181,5 @@ def healthz():
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
+    logger.info(f"Starting app on port {port}")
     app.run(host="0.0.0.0", port=port)
-
-
-
-
