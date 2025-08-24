@@ -1,4 +1,4 @@
-from flask import Flask, jsonify, request, render_template, render_template_string
+from flask import Flask, jsonify, request, render_template, render_template_string, Response
 import requests
 from bs4 import BeautifulSoup
 from io import BytesIO
@@ -14,7 +14,7 @@ HEADERS = {"User-Agent": "Mozilla/5.0"}
 def fetch_merit_lists():
     """Fetch all merit list entries from the UAF merit list page."""
     try:
-        response = requests.get(MERIT_LIST_PAGE, headers=HEADERS, timeout=30)
+        response = requests.get(MERIT_LIST_PAGE, headers=HEADERS, timeout=15)
         response.raise_for_status()
         soup = BeautifulSoup(response.text, "html.parser")
         data = []
@@ -72,20 +72,21 @@ def search_cnic():
     if not cnic:
         return render_template("index.html", error="Please enter CNIC.")
 
-    results = []
-    merit_lists = fetch_merit_lists()
-    batch_size = 3  # reduce batch size to avoid timeouts
+    def generate():
+        yield "<html><body>"
+        yield f"<h1>Searching for CNIC: {cnic}</h1>"
+        yield "<ul>"
 
-    for i in range(0, len(merit_lists), batch_size):
-        batch = merit_lists[i:i + batch_size]
-        for m in batch:
-            try:
-                if m["file"] and search_cnic_in_pdf(m["file"], cnic):
-                    results.append({"list": m["title"], "url": m["file"]})
-            except Exception as e:
-                print(f"[Error] Failed processing {m['file']}: {e}")
+        merit_lists = fetch_merit_lists()
+        for m in merit_lists:
+            if m["file"] and search_cnic_in_pdf(m["file"], cnic):
+                yield f'<li>✅ Found in: <b>{m["title"]}</b> — <a href="{m["file"]}" target="_blank">PDF</a></li>'
 
-    return render_template("results.html", results=results, cnic=cnic)
+        yield "</ul>"
+        yield '<a href="/">🔙 Back to Search</a>'
+        yield "</body></html>"
+
+    return Response(generate(), mimetype='text/html')
 
 
 @app.route("/all_links")
@@ -102,9 +103,7 @@ def view_links():
     html_content = """
     <!DOCTYPE html>
     <html>
-    <head>
-        <title>All Merit List Links</title>
-    </head>
+    <head><title>All Merit List Links</title></head>
     <body>
         <h1>All Merit List Entries</h1>
         <table border="1" cellpadding="5" cellspacing="0">
@@ -121,13 +120,7 @@ def view_links():
                 <td>{{ d.title }}</td>
                 <td>{{ d.campus }}</td>
                 <td>{{ d.degree }}</td>
-                <td>
-                    {% if d.file %}
-                        <a href="{{ d.file }}" target="_blank">PDF</a>
-                    {% else %}
-                        N/A
-                    {% endif %}
-                </td>
+                <td>{% if d.file %}<a href="{{ d.file }}" target="_blank">PDF</a>{% else %}N/A{% endif %}</td>
             </tr>
             {% endfor %}
         </table>
