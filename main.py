@@ -26,11 +26,11 @@ def fetch_merit_lists():
             for row in rows:
                 cols = row.find_all("td")
                 if len(cols) >= 5:
-                   file_link = cols[4].find("a")["href"] if cols[4].find("a") else ""
-if file_link:
-    if not file_link.startswith("http"):
-        # Ensure single slash between BASE_URL and file_link
-        file_link = BASE_URL.rstrip("/") + "/" + file_link.lstrip("/")
+                    file_link = cols[4].find("a")["href"] if cols[4].find("a") else ""
+                    if file_link:
+                        if not file_link.startswith("http"):
+                            # Ensure single slash between BASE_URL and file_link
+                            file_link = BASE_URL.rstrip("/") + "/" + file_link.lstrip("/")
 
                     data.append({
                         "listno": cols[0].get_text(strip=True),
@@ -43,6 +43,7 @@ if file_link:
     except Exception as e:
         print(f"[Error] Fetching merit lists failed: {e}")
         return []
+
 
 
 def search_cnic_in_pdf(pdf_url, cnic):
@@ -129,6 +130,7 @@ if __name__ == "__main__":
     import os
     port = int(os.environ.get("PORT", 5000))
     app.run(host="0.0.0.0", port=port)
+
 
 
 
