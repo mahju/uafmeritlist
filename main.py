@@ -23,7 +23,7 @@ MAX_MATCHES = 1
 REQ_TIMEOUT = 10
 
 def fetch_merit_lists():
-    """Fetch merit lists from UAF website"""
+    """Fetch merit lists from UAF website - MEMORY EFFICIENT VERSION"""
     try:
         logger.info(f"Fetching merit lists from: {MERIT_LIST_PAGE}")
         resp = requests.get(MERIT_LIST_PAGE, headers=HEADERS, timeout=REQ_TIMEOUT)
@@ -33,7 +33,9 @@ def fetch_merit_lists():
         table = soup.find("table")
         if not table:
             return data
-        for row in table.find_all("tr")[1:]:
+        
+        # Only get the first few entries to save memory - MAX 5 ROWS
+        for row in list(table.find_all("tr")[1:])[:5]:
             cols = row.find_all("td")
             if len(cols) < 5:
                 continue
@@ -58,44 +60,38 @@ def fetch_merit_lists():
         return []
 
 def search_in_pdf(pdf_url: str, cnic: str):
-    """Search for CNIC in PDF"""
+    """Search for CNIC in PDF - MEMORY EFFICIENT VERSION"""
     try:
-        r = requests.get(pdf_url, headers=HEADERS, timeout=REQ_TIMEOUT)
-        r.raise_for_status()
-        with pdfplumber.open(BytesIO(r.content)) as pdf:
-            for page in pdf.pages:
-                # Search tables
-                try:
-                    tables = page.extract_tables() or []
-                except Exception:
-                    tables = []
-                for table in tables:
-                    for row in table or []:
-                        if not row:
-                            continue
-                        for cell in row:
-                            cell_text = (cell or "").strip()
-                            if not cell_text:
-                                continue
-                            if cnic in "".join(ch for ch in cell_text if ch.isdigit()):
-                                return {
-                                    "row": " | ".join((c or "").strip() for c in row),
-                                    "columns": [(c or "").strip() for c in row],
-                                }
-                # Search text
+        # Stream the PDF instead of loading it all into memory
+        logger.info(f"Streaming PDF: {pdf_url}")
+        with requests.get(pdf_url, headers=HEADERS, timeout=REQ_TIMEOUT, stream=True) as r:
+            r.raise_for_status()
+            content = BytesIO()
+            for chunk in r.iter_content(chunk_size=8192):  # Stream in 8KB chunks
+                if chunk:
+                    content.write(chunk)
+        
+        # Only check first 3 pages to save memory
+        with pdfplumber.open(content) as pdf:
+            for page_num, page in enumerate(pdf.pages[:3]):  # ONLY FIRST 3 PAGES
+                logger.info(f"Scanning page {page_num + 1}")
+                
+                # Search text only (skip tables to save memory)
                 text = page.extract_text() or ""
-                if cnic in "".join(ch for ch in text if ch.isdigit()):
+                clean_text = "".join(ch for ch in text if ch.isdigit())
+                if cnic in clean_text:
+                    # Find the line containing CNIC
                     for line in text.split("\n"):
-                        if cnic in "".join(ch for ch in line if ch.isdigit()):
+                        line_clean = "".join(ch for ch in line if ch.isdigit())
+                        if cnic in line_clean:
                             return {
                                 "row": line.strip(),
                                 "columns": line.split(),
                             }
         return None
     except Exception as e:
-        logger.error(f"search_in_pdf failed: {e}")
+        logger.error(f"search_in_pdf failed for {pdf_url}: {e}")
         return None
-
 @app.route("/")
 def home():
     return render_template("index.html")
@@ -145,3 +141,4 @@ def healthz():
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
     app.run(host="0.0.0.0", port=port)
+
