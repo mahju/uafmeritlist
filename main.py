@@ -1,185 +1,141 @@
 from flask import Flask, jsonify, request, render_template, render_template_string
-import os
 import requests
 from bs4 import BeautifulSoup
 from io import BytesIO
 import pdfplumber
-import traceback
-import logging
-
-# Configure logging
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
 
-# -------- Settings --------
 BASE_URL = "https://web.uaf.edu.pk"
 MERIT_LIST_PAGE = "https://web.uaf.edu.pk/Downloads/MeritListsView"
-HEADERS = {"User-Agent": "Mozilla/5.0 (compatible; MeritListBot/1.0)"}
+HEADERS = {"User-Agent": "Mozilla/5.0"}
 
-MAX_PDFS = 1
-MAX_MATCHES = 1
-REQ_TIMEOUT = 10
 
 def fetch_merit_lists():
-    """Fetch merit lists from UAF website - MEMORY EFFICIENT VERSION"""
+    """Fetch all merit list entries from the UAF merit list page."""
     try:
-        logger.info(f"Fetching merit lists from: {MERIT_LIST_PAGE}")
-        resp = requests.get(MERIT_LIST_PAGE, headers=HEADERS, timeout=REQ_TIMEOUT)
-        resp.raise_for_status()
-        soup = BeautifulSoup(resp.text, "html.parser")
+        response = requests.get(MERIT_LIST_PAGE, headers=HEADERS, timeout=15)
+        response.raise_for_status()
+        soup = BeautifulSoup(response.text, "html.parser")
         data = []
+
         table = soup.find("table")
-        if not table:
-            return data
-        
-        # Only get the first few entries to save memory - MAX 5 ROWS
-        for row in list(table.find_all("tr")[1:])[:5]:
-            cols = row.find_all("td")
-            if len(cols) < 5:
-                continue
-            file_link = ""
-            a = cols[4].find("a")
-            if a and a.get("href"):
-                href = a["href"].strip()
-                if href.startswith("http"):
-                    file_link = href
-                else:
-                    file_link = BASE_URL.rstrip("/") + "/" + href.lstrip("/")
-            data.append({
-                "listno": cols[0].get_text(strip=True),
-                "title": cols[1].get_text(strip=True),
-                "campus": cols[2].get_text(strip=True),
-                "degree": cols[3].get_text(strip=True),
-                "file": file_link,
-            })
+        if table:
+            rows = table.find_all("tr")[1:]  # skip header
+            for row in rows:
+                cols = row.find_all("td")
+                if len(cols) >= 5:
+                    file_link = cols[4].find("a")["href"] if cols[4].find("a") else ""
+                    if file_link and not file_link.startswith("http"):
+                        file_link = BASE_URL.rstrip("/") + "/" + file_link.lstrip("/")
+
+                    data.append({
+                        "listno": cols[0].get_text(strip=True),
+                        "title": cols[1].get_text(strip=True),
+                        "campus": cols[2].get_text(strip=True),
+                        "degree": cols[3].get_text(strip=True),
+                        "file": file_link
+                    })
         return data
     except Exception as e:
-        logger.error(f"fetch_merit_lists failed: {e}")
+        print(f"[Error] Fetching merit lists failed: {e}")
         return []
 
-def search_in_pdf(pdf_url: str, cnic: str):
-    """Search for CNIC in PDF - WITH TABLES & MORE PAGES"""
+
+def search_in_pdf(pdf_url, cnic):
+    """Search CNIC in given PDF and return row details if found."""
     try:
-        # Stream the PDF instead of loading it all into memory
-        logger.info(f"Streaming PDF: {pdf_url}")
-        with requests.get(pdf_url, headers=HEADERS, timeout=REQ_TIMEOUT, stream=True) as r:
-            r.raise_for_status()
-            content = BytesIO()
-            for chunk in r.iter_content(chunk_size=8192):  # Stream in 8KB chunks
-                if chunk:
-                    content.write(chunk)
-        
-        # Search first 5 pages with table support
-        with pdfplumber.open(content) as pdf:
-            for page_num, page in enumerate(pdf.pages[:5]):  # FIRST 5 PAGES
-                logger.info(f"Scanning page {page_num + 1}")
-                
-                # 1. SEARCH TABLES FIRST (where CNIC usually is)
-                try:
-                    tables = page.extract_tables() or []
-                    for table_num, table in enumerate(tables):
-                        for row_num, row in enumerate(table):
-                            if not row:
-                                continue
-                            # Check every cell for CNIC
-                            for cell in row:
-                                cell_text = (cell or "").strip()
-                                if not cell_text:
-                                    continue
-                                # Remove non-digits and search
-                                cell_digits = "".join(ch for ch in cell_text if ch.isdigit())
-                                if cnic in cell_digits:
-                                    logger.info(f"CNIC found in table {table_num}, row {row_num}")
-                                    return {
-                                        "row": " | ".join((c or "").strip() for c in row),
-                                        "columns": [(c or "").strip() for c in row],
-                                    }
-                except Exception as e:
-                    logger.warning(f"Error extracting tables from page {page_num + 1}: {e}")
-                
-                # 2. SEARCH TEXT (fallback)
-                text = page.extract_text() or ""
-                clean_text = "".join(ch for ch in text if ch.isdigit())
-                if cnic in clean_text:
-                    # Find the line containing CNIC
-                    for line in text.split("\n"):
-                        line_clean = "".join(ch for ch in line if ch.isdigit())
-                        if cnic in line_clean:
-                            logger.info(f"CNIC found in text on page {page_num + 1}")
-                            return {
-                                "row": line.strip(),
-                                "columns": line.split(),
-                            }
-        
-        # Only return None if no match found in any page
-        logger.info(f"No CNIC {cnic} found in PDF")
+        response = requests.get(pdf_url, headers=HEADERS, timeout=20)
+        response.raise_for_status()
+
+        with pdfplumber.open(BytesIO(response.content)) as pdf:
+            for page in pdf.pages:
+                text = page.extract_text()
+                if not text:
+                    continue
+                lines = text.split("\n")
+                for line in lines:
+                    if cnic in line:
+                        return {
+                            "row": line,
+                            "columns": line.split()
+                        }
         return None
-        
     except Exception as e:
-        logger.error(f"search_in_pdf failed for {pdf_url}: {e}")
+        print(f"[Error] Searching in PDF failed ({pdf_url}): {e}")
         return None
 
-# ADDED MISSING ROUTES
-@app.route("/")
+
+@app.route("/", methods=["GET"])
 def home():
-    """Homepage route - THIS WAS MISSING!"""
     return render_template("index.html")
 
-@app.route("/test")
-def test():
-    """Test if templates and basic functionality work"""
-    try:
-        # Check if templates exist
-        templates_exist = os.path.exists("templates") and os.path.exists("templates/index.html")
-        return f"App is running! Templates found: {templates_exist}"
-    except Exception as e:
-        return f"Error: {str(e)}"
 
 @app.route("/search", methods=["POST"])
 def search_cnic():
-    try:
-        cnic = (request.form.get("cnic") or "").strip()
-        if not cnic:
-            return render_template("index.html", error="Please enter CNIC.")
-        if not cnic.isdigit():
-            return render_template("index.html", error="CNIC must be digits only (no dashes).")
-        
-        lists = fetch_merit_lists()
-        if not lists:
-            return render_template("results.html", cnic=cnic, results=[])
-        
-        results = []
-        scanned = 0
-        for entry in lists:
-            if scanned >= MAX_PDFS:
-                break
-            if not entry.get("file"):
-                continue
-            match = search_in_pdf(entry["file"], cnic)
-            scanned += 1
+    cnic = request.form.get("cnic", "").strip()
+    if not cnic:
+        return render_template("index.html", error="Please enter CNIC.")
+
+    results = []
+    merit_lists = fetch_merit_lists()
+
+    for m in merit_lists:
+        if m["file"]:
+            match = search_in_pdf(m["file"], cnic)
             if match:
                 results.append({
-                    "list": entry["title"],
-                    "url": entry["file"],
+                    "list": m["title"],
+                    "url": m["file"],
                     "row": match.get("row", ""),
-                    "columns": match.get("columns", []),
-                    "listno": entry.get("listno", ""),
-                    "campus": entry.get("campus", ""),
-                    "degree": entry.get("degree", ""),
+                    "columns": match.get("columns", [])
                 })
-                if len(results) >= MAX_MATCHES:
-                    break
-        return render_template("results.html", cnic=cnic, results=results)
-    except Exception as e:
-        return render_template("index.html", error=f"Error: {str(e)}")
 
-@app.route("/healthz")
-def healthz():
-    return "ok", 200
+    return render_template("results.html", results=results, cnic=cnic)
+
+
+@app.route("/all_links")
+def all_links():
+    data = fetch_merit_lists()
+    if not data:
+        return jsonify({"error": "No merit lists found."})
+    return jsonify(data)
+
+
+@app.route("/view_links")
+def view_links():
+    data = fetch_merit_lists()
+    html_content = """
+    <!DOCTYPE html>
+    <html>
+    <head><title>All Merit List Links</title></head>
+    <body>
+        <h1>All Merit List Entries</h1>
+        <table border="1" cellpadding="5" cellspacing="0">
+            <tr>
+                <th>List No</th>
+                <th>Title</th>
+                <th>Campus</th>
+                <th>Degree</th>
+                <th>PDF Link</th>
+            </tr>
+            {% for d in data %}
+            <tr>
+                <td>{{ d.listno }}</td>
+                <td>{{ d.title }}</td>
+                <td>{{ d.campus }}</td>
+                <td>{{ d.degree }}</td>
+                <td>{% if d.file %}<a href="{{ d.file }}" target="_blank">PDF</a>{% else %}N/A{% endif %}</td>
+            </tr>
+            {% endfor %}
+        </table>
+    </body>
+    </html>
+    """
+    return render_template_string(html_content, data=data)
+
 
 if __name__ == "__main__":
+    import os
     port = int(os.environ.get("PORT", 5000))
-    logger.info(f"Starting app on port {port}")
     app.run(host="0.0.0.0", port=port)
