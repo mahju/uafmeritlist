@@ -89,3 +89,37 @@ if __name__ == "__main__":
     import os
     port = int(os.environ.get("PORT", 5000))
     app.run(host="0.0.0.0", port=port)
+
+@app.route("/view_links")
+def view_links():
+    data = fetch_merit_lists()
+    html_content = """
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <title>All Merit List Links</title>
+    </head>
+    <body>
+        <h1>All Merit List Entries</h1>
+        <table border="1" cellpadding="5" cellspacing="0">
+            <tr>
+                <th>List No</th>
+                <th>Title</th>
+                <th>Campus</th>
+                <th>Degree</th>
+                <th>PDF Link</th>
+            </tr>
+            {% for d in data %}
+            <tr>
+                <td>{{ d.listno }}</td>
+                <td>{{ d.title }}</td>
+                <td>{{ d.campus }}</td>
+                <td>{{ d.degree }}</td>
+                <td><a href="{{ d.file }}" target="_blank">PDF</a></td>
+            </tr>
+            {% endfor %}
+        </table>
+    </body>
+    </html>
+    """
+    return render_template_string(html_content, data=data)
