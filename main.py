@@ -2,7 +2,7 @@ from flask import Flask, jsonify, request, render_template, render_template_stri
 import requests
 from bs4 import BeautifulSoup
 from io import BytesIO
-import PyPDF2
+import pdfplumber
 
 app = Flask(__name__)
 
@@ -45,23 +45,19 @@ def fetch_merit_lists():
 
 
 def search_cnic_in_pdf(pdf_url, cnic):
-    """Search CNIC in column 3 of each line in the PDF safely."""
+    """Search CNIC reliably in column 3 of PDF tables using pdfplumber."""
     try:
         r = requests.get(pdf_url, headers=HEADERS, timeout=30)
         r.raise_for_status()
-        reader = PyPDF2.PdfReader(BytesIO(r.content))
-
-        for page in reader.pages:
-            text = page.extract_text() or ""
-            for line in text.split("\n"):
-                cols = line.split()
-                if len(cols) >= 3:
-                    try:
-                        column3 = "".join(filter(str.isdigit, cols[2]))
-                        if cnic in column3:
-                            return True
-                    except Exception:
-                        continue
+        with pdfplumber.open(BytesIO(r.content)) as pdf:
+            for page in pdf.pages:
+                tables = page.extract_tables()
+                for table in tables:
+                    for row in table:
+                        if len(row) >= 3:
+                            col3 = "".join(filter(str.isdigit, row[2] or ""))
+                            if cnic in col3:
+                                return True
     except Exception as e:
         print(f"[Warning] Skipping PDF {pdf_url} due to error: {e}")
     return False
@@ -80,10 +76,10 @@ def search_cnic():
 
     results = []
     merit_lists = fetch_merit_lists()
-    batch_size = 10  # batch PDF processing
+    batch_size = 5  # reduce batch size to avoid overload
 
     for i in range(0, len(merit_lists), batch_size):
-        batch = merit_lists[i:i+batch_size]
+        batch = merit_lists[i:i + batch_size]
         for m in batch:
             if m["file"] and search_cnic_in_pdf(m["file"], cnic):
                 results.append({"list": m["title"], "url": m["file"]})
