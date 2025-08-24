@@ -1,5 +1,4 @@
 from flask import Flask, jsonify, request, render_template, render_template_string
-
 import requests
 from bs4 import BeautifulSoup
 from io import BytesIO
@@ -29,7 +28,7 @@ def fetch_merit_lists():
                     file_link = cols[4].find("a")["href"] if cols[4].find("a") else ""
                     if file_link:
                         if not file_link.startswith("http"):
-                            # Ensure single slash between BASE_URL and file_link
+                            # Ensure proper link without double dots
                             file_link = BASE_URL.rstrip("/") + "/" + file_link.lstrip("/")
 
                     data.append({
@@ -45,9 +44,8 @@ def fetch_merit_lists():
         return []
 
 
-
 def search_cnic_in_pdf(pdf_url, cnic):
-    """Search CNIC in column 3 of tables inside PDF."""
+    """Search CNIC in column 3 of each line in the PDF safely."""
     try:
         r = requests.get(pdf_url, headers=HEADERS, timeout=30)
         r.raise_for_status()
@@ -55,13 +53,15 @@ def search_cnic_in_pdf(pdf_url, cnic):
 
         for page in reader.pages:
             text = page.extract_text() or ""
-            # Split lines and columns
             for line in text.split("\n"):
-                cols = line.split()  # crude split by whitespace
+                cols = line.split()
                 if len(cols) >= 3:
-                    column3 = "".join(filter(str.isdigit, cols[2]))
-                    if cnic in column3:
-                        return True
+                    try:
+                        column3 = "".join(filter(str.isdigit, cols[2]))
+                        if cnic in column3:
+                            return True
+                    except Exception:
+                        continue
     except Exception as e:
         print(f"[Warning] Skipping PDF {pdf_url} due to error: {e}")
     return False
@@ -73,8 +73,6 @@ def home():
 
 
 @app.route("/search", methods=["POST"])
-
-@app.route("/search", methods=["POST"])
 def search_cnic():
     cnic = request.form.get("cnic", "").strip()
     if not cnic:
@@ -82,7 +80,7 @@ def search_cnic():
 
     results = []
     merit_lists = fetch_merit_lists()
-    batch_size = 10
+    batch_size = 10  # batch PDF processing
 
     for i in range(0, len(merit_lists), batch_size):
         batch = merit_lists[i:i+batch_size]
@@ -93,19 +91,18 @@ def search_cnic():
     return render_template("results.html", results=results, cnic=cnic)
 
 
-
 @app.route("/all_links")
 def all_links():
-    """Temporary route to verify all merit list links."""
+    """Return all merit list data as JSON."""
     data = fetch_merit_lists()
     if not data:
         return jsonify({"error": "No merit lists found."})
     return jsonify(data)
 
+
 @app.route("/view_links")
-
-
 def view_links():
+    """Render all merit list links in a table for verification."""
     data = fetch_merit_lists()
     html_content = """
     <!DOCTYPE html>
@@ -129,7 +126,13 @@ def view_links():
                 <td>{{ d.title }}</td>
                 <td>{{ d.campus }}</td>
                 <td>{{ d.degree }}</td>
-                <td><a href="{{ d.file }}" target="_blank">PDF</a></td>
+                <td>
+                    {% if d.file %}
+                        <a href="{{ d.file }}" target="_blank">PDF</a>
+                    {% else %}
+                        N/A
+                    {% endif %}
+                </td>
             </tr>
             {% endfor %}
         </table>
@@ -139,15 +142,7 @@ def view_links():
     return render_template_string(html_content, data=data)
 
 
-
 if __name__ == "__main__":
     import os
     port = int(os.environ.get("PORT", 5000))
     app.run(host="0.0.0.0", port=port)
-
-
-
-
-
-
-
