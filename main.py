@@ -10,52 +10,53 @@ BASE_URL = "https://web.uaf.edu.pk"
 MERIT_LIST_PAGE = "https://web.uaf.edu.pk/Downloads/MeritListsView"
 HEADERS = {"User-Agent": "Mozilla/5.0"}
 
+
 def fetch_merit_lists():
     """Fetch all merit list entries from the UAF merit list page."""
-    response = requests.get(MERIT_LIST_PAGE, headers=HEADERS)
-    response.raise_for_status()
-    soup = BeautifulSoup(response.text, "html.parser")
-    data = []
+    try:
+        response = requests.get(MERIT_LIST_PAGE, headers=HEADERS, timeout=30)
+        response.raise_for_status()
+        soup = BeautifulSoup(response.text, "html.parser")
+        data = []
 
-    table = soup.find("table")
-    if table:
-        rows = table.find_all("tr")[1:]  # skip header
-        for row in rows:
-            cols = row.find_all("td")
-            if len(cols) >= 5:
-                file_link = cols[4].find("a")["href"] if cols[4].find("a") else ""
-                if file_link and not file_link.startswith("http"):
-                    file_link = BASE_URL + file_link
-                data.append({
-                    "listno": cols[0].get_text(strip=True),
-                    "title": cols[1].get_text(strip=True),
-                    "campus": cols[2].get_text(strip=True),
-                    "degree": cols[3].get_text(strip=True),
-                    "file": file_link
-                })
-    return data
+        table = soup.find("table")
+        if table:
+            rows = table.find_all("tr")[1:]  # skip header
+            for row in rows:
+                cols = row.find_all("td")
+                if len(cols) >= 5:
+                    file_link = cols[4].find("a")["href"] if cols[4].find("a") else ""
+                    if file_link and not file_link.startswith("http"):
+                        file_link = BASE_URL + file_link
+                    data.append({
+                        "listno": cols[0].get_text(strip=True),
+                        "title": cols[1].get_text(strip=True),
+                        "campus": cols[2].get_text(strip=True),
+                        "degree": cols[3].get_text(strip=True),
+                        "file": file_link
+                    })
+        return data
+    except Exception as e:
+        print(f"[Error] Fetching merit lists failed: {e}")
+        return []
+
 
 def search_cnic_in_pdf(pdf_url, cnic):
-    """Download PDF and search for CNIC in column 3 of each row."""
+    """Download PDF and search for CNIC as plain number."""
     try:
         r = requests.get(pdf_url, headers=HEADERS, timeout=30)
         r.raise_for_status()
         reader = PyPDF2.PdfReader(BytesIO(r.content))
         for page in reader.pages:
             text = page.extract_text() or ""
-            lines = text.split("\n")
-            for line in lines:
-                cols = line.split()
-                if len(cols) >= 3:
-                    col3_digits = "".join(filter(str.isdigit, cols[2]))
-                    if cnic == col3_digits:
-                        return {
-                            "merit_list_line": line.strip(),
-                            "department": cols[1] if len(cols) > 1 else "",
-                        }
+            # Only keep digits for comparison
+            text_digits = "".join(filter(str.isdigit, text))
+            if cnic in text_digits:
+                return True
     except Exception as e:
         print(f"[Warning] Skipping PDF {pdf_url} due to error: {e}")
-    return None
+    return False
+
 
 @app.route("/")
 def home():
@@ -74,7 +75,7 @@ def home():
     <body>
         <h1>UAF Merit List CNIC Search</h1>
         <form action="/search" method="get">
-            Enter CNIC (numbers only): <input type="text" name="cnic" required>
+            Enter CNIC (without dashes): <input type="text" name="cnic" required>
             <input type="submit" value="Search">
         </form>
         <div class="result">
@@ -84,7 +85,8 @@ def home():
                     <ul>
                         {% for r in results %}
                             <li>
-                                Merit List: {{ r.listno }}, Department: {{ r.department }},
+                                List No: {{ r.listno }}, Title: {{ r.title }}, Campus: {{ r.campus }},
+                                Degree: {{ r.degree }},
                                 <a href="{{ r.file }}" target="_blank">PDF</a>
                             </li>
                         {% endfor %}
@@ -99,25 +101,31 @@ def home():
     """
     return render_template_string(html_content)
 
+
 @app.route("/search")
 def search_cnic():
     cnic = request.args.get("cnic", "").strip()
-    if not cnic or not cnic.isdigit():
-        return "Please provide a valid CNIC as numbers only.", 400
+    if not cnic:
+        return "Please provide a CNIC using ?cnic=XXXXXXXXXXX", 400
 
     results = []
     for m in fetch_merit_lists():
-        if m["file"]:
-            found = search_cnic_in_pdf(m["file"], cnic)
-            if found:
-                results.append({
-                    "listno": m["listno"],
-                    "department": found["department"],
-                    "file": m["file"]
-                })
+        if m["file"] and search_cnic_in_pdf(m["file"], cnic):
+            results.append(m)
 
+    # Render same HTML with results
     html_content = home().data.decode("utf-8")
     return render_template_string(html_content, results=results, cnic=cnic)
+
+
+@app.route("/all_links")
+def all_links():
+    """Temporary route to verify all merit list links."""
+    data = fetch_merit_lists()
+    if not data:
+        return jsonify({"error": "No merit lists found."})
+    return jsonify(data)
+
 
 if __name__ == "__main__":
     import os
