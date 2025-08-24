@@ -1,5 +1,5 @@
-Flask
+flask
 requests
 beautifulsoup4
-pdfplumber
 gunicorn
+PyPDF2
