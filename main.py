@@ -44,23 +44,26 @@ def fetch_merit_lists():
         return []
 
 
-def search_cnic_in_pdf(pdf_url, cnic):
-    """Search CNIC reliably in column 3 of PDF tables using pdfplumber."""
-    try:
-        r = requests.get(pdf_url, headers=HEADERS, timeout=30)
-        r.raise_for_status()
-        with pdfplumber.open(BytesIO(r.content)) as pdf:
-            for page in pdf.pages:
-                tables = page.extract_tables()
-                for table in tables:
-                    for row in table:
-                        if len(row) >= 3:
-                            col3 = "".join(filter(str.isdigit, row[2] or ""))
-                            if cnic in col3:
-                                return True
-    except Exception as e:
-        print(f"[Warning] Skipping PDF {pdf_url} due to error: {e}")
-    return False
+@app.route("/search", methods=["POST"])
+def search_cnic():
+    cnic = request.form.get("cnic", "").strip()
+    if not cnic:
+        return render_template("index.html", error="Please enter CNIC.")
+
+    results = []
+    merit_lists = fetch_merit_lists()
+    batch_size = 3  # smaller batch to avoid timeouts
+
+    for i in range(0, len(merit_lists), batch_size):
+        batch = merit_lists[i:i + batch_size]
+        for m in batch:
+            try:
+                if m["file"] and search_cnic_in_pdf(m["file"], cnic):
+                    results.append({"list": m["title"], "url": m["file"]})
+            except Exception as e:
+                print(f"[Error] Failed processing {m['file']}: {e}")
+
+    return render_template("results.html", results=results, cnic=cnic)
 
 
 @app.route("/", methods=["GET"])
@@ -142,3 +145,4 @@ if __name__ == "__main__":
     import os
     port = int(os.environ.get("PORT", 5000))
     app.run(host="0.0.0.0", port=port)
+
