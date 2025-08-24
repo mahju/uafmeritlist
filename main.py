@@ -58,21 +58,21 @@ def search_cnic():
     if not cnic:
         return render_template("index.html", error="Please enter CNIC.")
 
-    def generate():
-        yield "<html><body>"
-        yield f"<h1>Searching for CNIC: {cnic}</h1>"
-        yield "<ul>"
+    results = []
+    merit_lists = fetch_merit_lists()
 
-        merit_lists = fetch_merit_lists()
-        for m in merit_lists:
-            if m["file"] and search_cnic_in_pdf(m["file"], cnic):
-                yield f'<li>✅ Found in: <b>{m["title"]}</b> — <a href="{m["file"]}" target="_blank">PDF</a></li>'
+    for m in merit_lists:
+        if m["file"]:
+            match = search_in_pdf(m["file"], cnic)  # your function should return details if found
+            if match:
+                results.append({
+                    "list": m["title"],
+                    "url": m["file"],
+                    "row": match.get("row", ""),
+                    "columns": match.get("columns", [])
+                })
 
-        yield "</ul>"
-        yield '<a href="/">🔙 Back to Search</a>'
-        yield "</body></html>"
-
-    return Response(generate(), mimetype='text/html')
+    return render_template("results.html", results=results, cnic=cnic)
 
 
 @app.route("/all_links")
@@ -120,5 +120,6 @@ if __name__ == "__main__":
     import os
     port = int(os.environ.get("PORT", 5000))
     app.run(host="0.0.0.0", port=port)
+
 
 
